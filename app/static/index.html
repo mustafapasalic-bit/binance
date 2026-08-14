@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Binance Signal Trader</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background:#0d1117; color:#e6edf3; margin:0; padding:24px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  h2 { font-size:14px; margin:24px 0 8px; color:#8b949e; text-transform:uppercase; letter-spacing:.08em; }
+  .bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
+  .card { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:12px; }
+  .card .label { font-size:11px; color:#8b949e; text-transform:uppercase; }
+  .card .value { font-size:20px; margin-top:6px; }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #21262d; white-space:nowrap; }
+  th { color:#8b949e; font-weight:normal; }
+  .pos { color:#3fb950; } .neg { color:#f85149; }
+  .pill { padding:2px 8px; border-radius:999px; font-size:11px; border:1px solid #30363d; }
+  .on { background:#12351f; color:#3fb950; } .off { background:#3d1418; color:#f85149; }
+  .live { background:#3d1418; color:#f85149; border-color:#f85149; }
+  button { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:6px 12px; cursor:pointer; }
+  button:hover { background:#30363d; }
+  button.danger { border-color:#f85149; color:#f85149; }
+  input { background:#0d1117; border:1px solid #30363d; color:#e6edf3; border-radius:6px; padding:6px 8px; }
+  .muted { color:#8b949e; font-size:11px; }
+  .scroll { max-height:280px; overflow:auto; border:1px solid #21262d; border-radius:8px; }
+</style>
+</head>
+<body>
+<h1>Binance Signal Trader</h1>
+<div class="muted" id="endpoint">connecting…</div>
+
+<div class="bar">
+  <span id="mode" class="pill">env</span>
+  <span id="trading" class="pill">trading</span>
+  <input id="token" type="password" placeholder="admin token" size="24" />
+  <button id="btn-enable">Enable trading</button>
+  <button id="btn-disable">Disable</button>
+  <button id="btn-kill" class="danger">KILL SWITCH + close all</button>
+  <button id="btn-reconcile">Reconcile now</button>
+  <span class="muted" id="updated"></span>
+</div>
+
+<div class="cards" id="cards"></div>
+
+<h2>Open positions</h2>
+<div class="scroll"><table id="positions"><thead><tr>
+  <th>#</th><th>Symbol</th><th>Qty</th><th>Entry</th><th>Mark</th><th>SL</th><th>TP</th><th>uPnL</th><th>%</th><th>Opened</th><th></th>
+</tr></thead><tbody></tbody></table></div>
+
+<h2>Trades</h2>
+<div class="scroll"><table id="trades"><thead><tr>
+  <th>#</th><th>Symbol</th><th>Status</th><th>Qty</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Reason</th><th>Opened</th><th>Closed</th>
+</tr></thead><tbody></tbody></table></div>
+
+<h2>Signals</h2>
+<div class="scroll"><table id="signals"><thead><tr>
+  <th>#</th><th>Source</th><th>Symbol</th><th>Side</th><th>Conf</th><th>Status</th><th>Reason</th><th>Received</th>
+</tr></thead><tbody></tbody></table></div>
+
+<h2>Audit log</h2>
+<div class="scroll"><table id="audit"><thead><tr>
+  <th>Time</th><th>Event</th><th>Symbol</th><th>Decision</th><th>Reason</th>
+</tr></thead><tbody></tbody></table></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const fmt = (v, d = 2) => v === null || v === undefined ? "—" : Number(v).toLocaleString("en-US", {minimumFractionDigits: d, maximumFractionDigits: 8});
+const time = (t) => t ? new Date(t).toLocaleString() : "—";
+const cls = (v) => Number(v) > 0 ? "pos" : Number(v) < 0 ? "neg" : "";
+
+function token() {
+  const t = $("#token").value.trim();
+  localStorage.setItem("adminToken", t);
+  return t;
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, options);
+  if (!res.ok) throw new Error(`${path}: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+async function post(path, body) {
+  return api(path, {
+    method: "POST",
+    headers: {"Content-Type": "application/json", "X-Admin-Token": token()},
+    body: JSON.stringify(body || {}),
+  });
+}
+
+function rows(table, data, render) {
+  const tbody = $(table).querySelector("tbody");
+  tbody.innerHTML = "";
+  for (const item of data) tbody.insertAdjacentHTML("beforeend", render(item));
+}
+
+async function refresh() {
+  try {
+    const s = await api("/api/status");
+    $("#endpoint").textContent = `${s.base_url} · quote ${s.quote_asset} · symbols ${s.allowed_symbols.join(", ")} · clock offset ${s.server_time_offset_ms} ms`;
+    $("#mode").textContent = s.environment.toUpperCase();
+    $("#mode").className = "pill " + (s.environment === "live" ? "live" : "on");
+    $("#trading").textContent = s.trading_enabled ? "TRADING ON" : "TRADING OFF" + (s.kill_switch_reason ? ` · ${s.kill_switch_reason}` : "");
+    $("#trading").className = "pill " + (s.trading_enabled ? "on" : "off");
+    $("#cards").innerHTML = [
+      ["Equity", `${fmt(s.account_equity_quote)} ${s.quote_asset}`, ""],
+      ["Free balance", `${fmt(s.free_quote_balance)} ${s.quote_asset}`, ""],
+      ["Realized PnL today", fmt(s.realized_pnl_today), cls(s.realized_pnl_today)],
+      ["Unrealized PnL", fmt(s.unrealized_pnl), cls(s.unrealized_pnl)],
+      ["Open positions", `${s.open_positions} / ${s.max_open_positions}`, ""],
+      ["Trades today", `${s.trades_today} / ${s.max_trades_per_day}`, ""],
+      ["Daily loss limit", `${fmt(s.daily_loss_limit)} ${s.quote_asset}`, ""],
+    ].map(([label, value, c]) => `<div class="card"><div class="label">${label}</div><div class="value ${c}">${value}</div></div>`).join("");
+
+    rows("#positions", await api("/api/positions"), (p) => `<tr>
+      <td>${p.trade_id}</td><td>${p.symbol}</td><td>${fmt(p.qty, 6)}</td><td>${fmt(p.entry_price)}</td>
+      <td>${fmt(p.mark_price)}</td><td>${fmt(p.stop_price)}</td><td>${fmt(p.take_profit_price)}</td>
+      <td class="${cls(p.unrealized_pnl_quote)}">${fmt(p.unrealized_pnl_quote)}</td>
+      <td class="${cls(p.unrealized_pnl_pct)}">${fmt(p.unrealized_pnl_pct)}%</td>
+      <td>${time(p.opened_at)}</td>
+      <td><button onclick="closeTrade(${p.trade_id})">Close</button></td></tr>`);
+
+    rows("#trades", await api("/api/trades?limit=50"), (t) => `<tr>
+      <td>${t.id}</td><td>${t.symbol}</td><td>${t.status}</td><td>${fmt(t.qty, 6)}</td>
+      <td>${fmt(t.entry_price)}</td><td>${fmt(t.exit_price)}</td>
+      <td class="${cls(t.realized_pnl_quote)}">${fmt(t.realized_pnl_quote)}</td>
+      <td>${t.exit_reason || "—"}</td><td>${time(t.opened_at)}</td><td>${time(t.closed_at)}</td></tr>`);
+
+    rows("#signals", await api("/api/signals?limit=50"), (x) => `<tr>
+      <td>${x.id}</td><td>${x.source}</td><td>${x.symbol}</td><td>${x.side}</td><td>${x.confidence}</td>
+      <td>${x.status}</td><td>${x.reject_reason || "—"}</td><td>${time(x.received_at)}</td></tr>`);
+
+    rows("#audit", await api("/api/audit?limit=100"), (a) => `<tr>
+      <td>${time(a.created_at)}</td><td>${a.event}</td><td>${a.symbol || "—"}</td>
+      <td>${a.decision || "—"}</td><td>${a.reason || "—"}</td></tr>`);
+
+    $("#updated").textContent = `updated ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    $("#updated").textContent = String(err);
+  }
+}
+
+async function closeTrade(id) {
+  if (!confirm(`Market-close trade ${id}?`)) return;
+  try { await post(`/api/admin/positions/${id}/close`); } catch (e) { alert(e); }
+  refresh();
+}
+
+$("#btn-enable").onclick = async () => { try { await post("/api/admin/trading", {enabled: true, reason: "enabled from dashboard"}); } catch (e) { alert(e); } refresh(); };
+$("#btn-disable").onclick = async () => { try { await post("/api/admin/trading", {enabled: false, reason: "disabled from dashboard"}); } catch (e) { alert(e); } refresh(); };
+$("#btn-kill").onclick = async () => {
+  if (!confirm("Kill switch: stop trading AND market-close every open position?")) return;
+  try { await post("/api/admin/kill-switch", {close_positions: true, reason: "dashboard kill switch"}); } catch (e) { alert(e); }
+  refresh();
+};
+$("#btn-reconcile").onclick = async () => { try { await post("/api/admin/reconcile"); } catch (e) { alert(e); } refresh(); };
+
+$("#token").value = localStorage.getItem("adminToken") || "";
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
