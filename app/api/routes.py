@@ -1,6 +1,7 @@
 import json
 from decimal import Decimal
 
+import httpx
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_admin, settings_dep, verify_webhook
 from app.config import Settings
 from app.db import get_session
+from app.exchange.binance_client import BinanceClient, BinanceError
 from app.models import AuditLog, Signal, Trade
 from app.schemas import PositionOut, SignalIn, SignalResult, StatusOut, TradeOut
 from app.services import execution, pipeline, portfolio, risk
@@ -18,6 +20,14 @@ from app.services.state import get_state, set_trading_enabled
 router = APIRouter()
 
 
+def optional_client(settings: Settings) -> tuple[BinanceClient | None, str | None]:
+    """Client for read-only views, which stay usable while Binance is unreachable."""
+    try:
+        return get_client(settings), None
+    except (BinanceError, RuntimeError, httpx.HTTPError) as exc:
+        return None, str(exc)
+
+
 @router.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -25,27 +35,36 @@ def health() -> dict:
 
 @router.get("/status", response_model=StatusOut)
 def status(session: Session = Depends(get_session), settings: Settings = Depends(settings_dep)) -> StatusOut:
-    client = get_client(settings)
     state = get_state(session)
+    client, exchange_error = optional_client(settings)
     positions = portfolio.open_positions(session, client)
-    return StatusOut(
+    out = StatusOut(
         environment=settings.binance_env,
         base_url=settings.base_url,
         trading_enabled=state.trading_enabled,
         kill_switch_reason=state.kill_switch_reason,
-        server_time_offset_ms=client._time_offset_ms,  # noqa: SLF001 - diagnostic value
         quote_asset=settings.quote_asset,
-        free_quote_balance=client.free_balance(settings.quote_asset),
-        account_equity_quote=risk.account_equity_quote(client, settings),
         open_positions=len(positions),
         max_open_positions=settings.max_open_positions,
         realized_pnl_today=risk.realized_pnl_today(session),
-        unrealized_pnl=sum((p.unrealized_pnl_quote or Decimal("0") for p in positions), Decimal("0")),
         trades_today=risk.trades_today(session),
         max_trades_per_day=settings.max_trades_per_day,
         daily_loss_limit=settings.max_daily_loss_usdt,
         allowed_symbols=settings.symbol_whitelist,
+        exchange_error=exchange_error,
     )
+    if client is None:
+        return out
+
+    # Exchange-sourced figures are left empty rather than guessed when Binance is down.
+    out.server_time_offset_ms = client._time_offset_ms  # noqa: SLF001 - diagnostic value
+    out.unrealized_pnl = sum((p.unrealized_pnl_quote or Decimal("0") for p in positions), Decimal("0"))
+    try:
+        out.free_quote_balance = client.free_balance(settings.quote_asset)
+        out.account_equity_quote = risk.account_equity_quote(client, settings)
+    except (BinanceError, httpx.HTTPError) as exc:
+        out.exchange_error = str(exc)
+    return out
 
 
 @router.post("/signals/webhook", response_model=SignalResult)
@@ -63,7 +82,7 @@ def signal_webhook(
 
 @router.get("/positions", response_model=list[PositionOut])
 def positions(session: Session = Depends(get_session), settings: Settings = Depends(settings_dep)):
-    return portfolio.open_positions(session, get_client(settings))
+    return portfolio.open_positions(session, optional_client(settings)[0])
 
 
 @router.get("/trades", response_model=list[TradeOut])

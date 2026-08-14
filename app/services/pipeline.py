@@ -6,6 +6,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
+import httpx
 from sqlalchemy.orm import Session
 
 from app.config import Settings
@@ -51,7 +52,32 @@ def _reject(session: Session, signal: Signal, reason: str, details: dict | None 
     return SignalResult(signal_id=signal.id, status="rejected", reason=reason, symbol=signal.symbol)
 
 
+def _exchange_failure(session: Session, signal: Signal, event: str, exc: Exception) -> SignalResult:
+    """Record an exchange outage against the signal instead of losing it in a 500."""
+    reason = str(exc)
+    signal.status = "failed"
+    signal.reject_reason = reason[:255]
+    log_event(session, event, symbol=signal.symbol, signal_id=signal.id, decision="error", reason=reason)
+    send_alert(f"{event.upper()} {signal.symbol}: {reason}")
+    logger.error("%s for signal %s: %s", event, signal.id, reason)
+    return SignalResult(signal_id=signal.id, status="failed", reason=reason, symbol=signal.symbol)
+
+
 def process_signal(session: Session, settings: Settings, payload: SignalIn) -> SignalResult:
+    # external_id is unique in the DB, so duplicates are caught before the insert.
+    duplicate = validator.find_by_external_id(session, payload)
+    if duplicate is not None:
+        reason = f"duplicate external_id {payload.external_id}"
+        log_event(
+            session,
+            "signal_rejected",
+            symbol=payload.symbol,
+            signal_id=duplicate.id,
+            decision="rejected",
+            reason=reason,
+        )
+        return SignalResult(signal_id=duplicate.id, status="rejected", reason=reason, symbol=payload.symbol)
+
     signal = store_signal(session, payload)
     log_event(
         session,
@@ -65,7 +91,10 @@ def process_signal(session: Session, settings: Settings, payload: SignalIn) -> S
     if not state.trading_enabled:
         return _reject(session, signal, f"trading disabled ({state.kill_switch_reason or 'kill switch active'})")
 
-    client = get_client(settings)
+    try:
+        client = get_client(settings)
+    except (BinanceError, RuntimeError, httpx.HTTPError) as exc:
+        return _exchange_failure(session, signal, "exchange_error", exc)
 
     # SELL signals only ever close an existing position - this bot is spot long-only.
     if payload.side == "SELL":
@@ -89,11 +118,14 @@ def process_signal(session: Session, settings: Settings, payload: SignalIn) -> S
             entry_price=trade.exit_price,
         )
 
-    verdict = validator.validate(session, client, settings, payload)
-    if not verdict.ok:
-        return _reject(session, signal, verdict.reason or "validation failed", verdict.details)
+    try:
+        verdict = validator.validate(session, client, settings, payload, exclude_signal_id=signal.id)
+        if not verdict.ok:
+            return _reject(session, signal, verdict.reason or "validation failed", verdict.details)
+        decision = risk.evaluate(session, client, settings, signal.symbol, payload.confidence)
+    except (BinanceError, httpx.HTTPError) as exc:
+        return _exchange_failure(session, signal, "exchange_error", exc)
 
-    decision = risk.evaluate(session, client, settings, signal.symbol, payload.confidence)
     log_event(
         session,
         "risk_evaluated",

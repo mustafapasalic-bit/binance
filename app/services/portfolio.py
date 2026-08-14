@@ -20,17 +20,19 @@ from app.services.audit import log_event
 logger = logging.getLogger(__name__)
 
 
-def open_positions(session: Session, client: BinanceClient) -> list[PositionOut]:
+def open_positions(session: Session, client: BinanceClient | None) -> list[PositionOut]:
+    """Open trades from the DB, marked to live bids when the exchange is reachable."""
     positions: list[PositionOut] = []
     for trade in risk.open_trades(session):
         mark = None
         unrealized = None
         unrealized_pct = None
         try:
-            mark = Decimal(client.book_ticker(trade.symbol)["bidPrice"])
-            unrealized = trade.qty * mark - trade.entry_quote_qty
-            if trade.entry_quote_qty > 0:
-                unrealized_pct = unrealized / trade.entry_quote_qty * Decimal("100")
+            if client is not None:
+                mark = Decimal(client.book_ticker(trade.symbol)["bidPrice"])
+                unrealized = trade.qty * mark - trade.entry_quote_qty
+                if trade.entry_quote_qty > 0:
+                    unrealized_pct = unrealized / trade.entry_quote_qty * Decimal("100")
         except BinanceError as exc:
             logger.warning("mark price unavailable for %s: %s", trade.symbol, exc)
         positions.append(

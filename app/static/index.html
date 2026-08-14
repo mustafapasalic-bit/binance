@@ -43,6 +43,7 @@
   <span class="muted" id="updated"></span>
 </div>
 
+<div class="muted neg" id="exchange-error"></div>
 <div class="cards" id="cards"></div>
 
 <h2>Open positions</h2>
@@ -97,50 +98,57 @@ function rows(table, data, render) {
   for (const item of data) tbody.insertAdjacentHTML("beforeend", render(item));
 }
 
-async function refresh() {
-  try {
-    const s = await api("/api/status");
-    $("#endpoint").textContent = `${s.base_url} · quote ${s.quote_asset} · symbols ${s.allowed_symbols.join(", ")} · clock offset ${s.server_time_offset_ms} ms`;
-    $("#mode").textContent = s.environment.toUpperCase();
-    $("#mode").className = "pill " + (s.environment === "live" ? "live" : "on");
-    $("#trading").textContent = s.trading_enabled ? "TRADING ON" : "TRADING OFF" + (s.kill_switch_reason ? ` · ${s.kill_switch_reason}` : "");
-    $("#trading").className = "pill " + (s.trading_enabled ? "on" : "off");
-    $("#cards").innerHTML = [
-      ["Equity", `${fmt(s.account_equity_quote)} ${s.quote_asset}`, ""],
-      ["Free balance", `${fmt(s.free_quote_balance)} ${s.quote_asset}`, ""],
-      ["Realized PnL today", fmt(s.realized_pnl_today), cls(s.realized_pnl_today)],
-      ["Unrealized PnL", fmt(s.unrealized_pnl), cls(s.unrealized_pnl)],
-      ["Open positions", `${s.open_positions} / ${s.max_open_positions}`, ""],
-      ["Trades today", `${s.trades_today} / ${s.max_trades_per_day}`, ""],
-      ["Daily loss limit", `${fmt(s.daily_loss_limit)} ${s.quote_asset}`, ""],
-    ].map(([label, value, c]) => `<div class="card"><div class="label">${label}</div><div class="value ${c}">${value}</div></div>`).join("");
+async function refreshStatus() {
+  const s = await api("/api/status");
+  $("#endpoint").textContent = `${s.base_url} · quote ${s.quote_asset} · symbols ${s.allowed_symbols.join(", ")} · clock offset ${s.server_time_offset_ms ?? "—"} ms`;
+  $("#mode").textContent = s.environment.toUpperCase();
+  $("#mode").className = "pill " + (s.environment === "live" ? "live" : "on");
+  $("#trading").textContent = s.trading_enabled ? "TRADING ON" : "TRADING OFF" + (s.kill_switch_reason ? ` · ${s.kill_switch_reason}` : "");
+  $("#trading").className = "pill " + (s.trading_enabled ? "on" : "off");
+  $("#exchange-error").textContent = s.exchange_error ? `Binance unreachable: ${s.exchange_error}` : "";
+  $("#cards").innerHTML = [
+    ["Equity", `${fmt(s.account_equity_quote)} ${s.quote_asset}`, ""],
+    ["Free balance", `${fmt(s.free_quote_balance)} ${s.quote_asset}`, ""],
+    ["Realized PnL today", fmt(s.realized_pnl_today), cls(s.realized_pnl_today)],
+    ["Unrealized PnL", fmt(s.unrealized_pnl), cls(s.unrealized_pnl)],
+    ["Open positions", `${s.open_positions} / ${s.max_open_positions}`, ""],
+    ["Trades today", `${s.trades_today} / ${s.max_trades_per_day}`, ""],
+    ["Daily loss limit", `${fmt(s.daily_loss_limit)} ${s.quote_asset}`, ""],
+  ].map(([label, value, c]) => `<div class="card"><div class="label">${label}</div><div class="value ${c}">${value}</div></div>`).join("");
+}
 
-    rows("#positions", await api("/api/positions"), (p) => `<tr>
+async function refresh() {
+  const sections = [
+    refreshStatus(),
+
+    api("/api/positions").then((data) => rows("#positions", data, (p) => `<tr>
       <td>${p.trade_id}</td><td>${p.symbol}</td><td>${fmt(p.qty, 6)}</td><td>${fmt(p.entry_price)}</td>
       <td>${fmt(p.mark_price)}</td><td>${fmt(p.stop_price)}</td><td>${fmt(p.take_profit_price)}</td>
       <td class="${cls(p.unrealized_pnl_quote)}">${fmt(p.unrealized_pnl_quote)}</td>
       <td class="${cls(p.unrealized_pnl_pct)}">${fmt(p.unrealized_pnl_pct)}%</td>
       <td>${time(p.opened_at)}</td>
-      <td><button onclick="closeTrade(${p.trade_id})">Close</button></td></tr>`);
+      <td><button onclick="closeTrade(${p.trade_id})">Close</button></td></tr>`)),
 
-    rows("#trades", await api("/api/trades?limit=50"), (t) => `<tr>
+    api("/api/trades?limit=50").then((data) => rows("#trades", data, (t) => `<tr>
       <td>${t.id}</td><td>${t.symbol}</td><td>${t.status}</td><td>${fmt(t.qty, 6)}</td>
       <td>${fmt(t.entry_price)}</td><td>${fmt(t.exit_price)}</td>
       <td class="${cls(t.realized_pnl_quote)}">${fmt(t.realized_pnl_quote)}</td>
-      <td>${t.exit_reason || "—"}</td><td>${time(t.opened_at)}</td><td>${time(t.closed_at)}</td></tr>`);
+      <td>${t.exit_reason || "—"}</td><td>${time(t.opened_at)}</td><td>${time(t.closed_at)}</td></tr>`)),
 
-    rows("#signals", await api("/api/signals?limit=50"), (x) => `<tr>
+    api("/api/signals?limit=50").then((data) => rows("#signals", data, (x) => `<tr>
       <td>${x.id}</td><td>${x.source}</td><td>${x.symbol}</td><td>${x.side}</td><td>${x.confidence}</td>
-      <td>${x.status}</td><td>${x.reject_reason || "—"}</td><td>${time(x.received_at)}</td></tr>`);
+      <td>${x.status}</td><td>${x.reject_reason || "—"}</td><td>${time(x.received_at)}</td></tr>`)),
 
-    rows("#audit", await api("/api/audit?limit=100"), (a) => `<tr>
+    api("/api/audit?limit=100").then((data) => rows("#audit", data, (a) => `<tr>
       <td>${time(a.created_at)}</td><td>${a.event}</td><td>${a.symbol || "—"}</td>
-      <td>${a.decision || "—"}</td><td>${a.reason || "—"}</td></tr>`);
+      <td>${a.decision || "—"}</td><td>${a.reason || "—"}</td></tr>`)),
+  ];
 
-    $("#updated").textContent = `updated ${new Date().toLocaleTimeString()}`;
-  } catch (err) {
-    $("#updated").textContent = String(err);
-  }
+  // One failing section must never blank the rest of the dashboard.
+  const failures = (await Promise.allSettled(sections)).filter((r) => r.status === "rejected");
+  $("#updated").textContent = failures.length
+    ? failures.map((f) => String(f.reason)).join(" | ")
+    : `updated ${new Date().toLocaleTimeString()}`;
 }
 
 async function closeTrade(id) {

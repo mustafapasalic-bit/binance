@@ -39,6 +39,16 @@ def test_rejects_duplicate_external_id(session, client, settings):
     assert not result.ok and "duplicate" in result.reason
 
 
+def test_stored_signal_is_not_its_own_duplicate(session, client, settings):
+    stored = Signal(external_id="abc", source="tv", symbol="BTCUSDT", side="BUY")
+    session.add(stored)
+    session.flush()
+    result = validator.validate(
+        session, client, settings, signal(external_id="abc"), exclude_signal_id=stored.id
+    )
+    assert result.ok
+
+
 def test_rejects_counter_trend_buy(session, client, settings):
     client.closes = [Decimal("70000")] * 50 + [Decimal("60000")]
     result = validator.validate(session, client, settings, signal())

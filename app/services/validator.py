@@ -22,10 +22,19 @@ class ValidationResult:
     details: dict | None = None
 
 
-def check_duplicate(session: Session, signal: SignalIn) -> bool:
+def find_by_external_id(session: Session, signal: SignalIn) -> Signal | None:
+    if not signal.external_id:
+        return None
+    return session.scalar(select(Signal).where(Signal.external_id == signal.external_id))
+
+
+def check_duplicate(session: Session, signal: SignalIn, exclude_signal_id: int | None = None) -> bool:
     if not signal.external_id:
         return False
-    return session.scalar(select(Signal.id).where(Signal.external_id == signal.external_id)) is not None
+    query = select(Signal.id).where(Signal.external_id == signal.external_id)
+    if exclude_signal_id is not None:
+        query = query.where(Signal.id != exclude_signal_id)
+    return session.scalar(query) is not None
 
 
 def spread_pct(book: dict) -> Decimal:
@@ -54,6 +63,7 @@ def validate(
     *,
     require_trend: bool = True,
     min_confidence: Decimal = Decimal("0.5"),
+    exclude_signal_id: int | None = None,
 ) -> ValidationResult:
     if signal.symbol not in settings.symbol_whitelist:
         return ValidationResult(False, f"symbol {signal.symbol} not in whitelist")
@@ -76,7 +86,7 @@ def validate(
     if signal.confidence < min_confidence:
         return ValidationResult(False, f"confidence {signal.confidence} below {min_confidence}")
 
-    if check_duplicate(session, signal):
+    if check_duplicate(session, signal, exclude_signal_id):
         return ValidationResult(False, f"duplicate external_id {signal.external_id}")
 
     book = client.book_ticker(signal.symbol)

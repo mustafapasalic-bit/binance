@@ -74,15 +74,16 @@ class StatusOut(BaseModel):
     base_url: str
     trading_enabled: bool
     kill_switch_reason: str | None
-    server_time_offset_ms: int
+    server_time_offset_ms: int | None = None
     quote_asset: str
-    free_quote_balance: Decimal
-    account_equity_quote: Decimal
+    free_quote_balance: Decimal | None = None
+    account_equity_quote: Decimal | None = None
     open_positions: int
     max_open_positions: int
     realized_pnl_today: Decimal
-    unrealized_pnl: Decimal
+    unrealized_pnl: Decimal | None = None
     trades_today: int
     max_trades_per_day: int
     daily_loss_limit: Decimal
     allowed_symbols: list[str]
+    exchange_error: str | None = None
