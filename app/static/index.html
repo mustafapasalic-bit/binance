@@ -2,75 +2,319 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Binance Signal Trader</title>
 <style>
-  :root { color-scheme: dark; }
-  body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background:#0d1117; color:#e6edf3; margin:0; padding:24px; }
-  h1 { font-size:18px; margin:0 0 4px; }
-  h2 { font-size:14px; margin:24px 0 8px; color:#8b949e; text-transform:uppercase; letter-spacing:.08em; }
-  .bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
-  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
-  .card { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:12px; }
-  .card .label { font-size:11px; color:#8b949e; text-transform:uppercase; }
-  .card .value { font-size:20px; margin-top:6px; }
-  table { width:100%; border-collapse:collapse; font-size:12px; }
-  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #21262d; white-space:nowrap; }
-  th { color:#8b949e; font-weight:normal; }
-  .pos { color:#3fb950; } .neg { color:#f85149; }
-  .pill { padding:2px 8px; border-radius:999px; font-size:11px; border:1px solid #30363d; }
-  .on { background:#12351f; color:#3fb950; } .off { background:#3d1418; color:#f85149; }
-  .live { background:#3d1418; color:#f85149; border-color:#f85149; }
-  button { background:#21262d; color:#e6edf3; border:1px solid #30363d; border-radius:6px; padding:6px 12px; cursor:pointer; }
-  button:hover { background:#30363d; }
-  button.danger { border-color:#f85149; color:#f85149; }
-  input { background:#0d1117; border:1px solid #30363d; color:#e6edf3; border-radius:6px; padding:6px 8px; }
-  .muted { color:#8b949e; font-size:11px; }
-  .scroll { max-height:280px; overflow:auto; border:1px solid #21262d; border-radius:8px; }
+  :root {
+    color-scheme: dark;
+    --bg: #05070a;
+    --panel: #0d1117;
+    --panel-2: #111820;
+    --border: #1c232c;
+    --border-2: #28313d;
+    --text: #e6edf3;
+    --text-2: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #d29922;
+    --radius: 12px;
+    --shadow: 0 1px 2px rgba(0,0,0,0.25);
+    --mono: "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: radial-gradient(circle at 50% 0%, #0f1720 0%, var(--bg) 700px);
+    color: var(--text);
+    margin: 0;
+    padding: 24px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+  .container { max-width: 1400px; margin: 0 auto; }
+
+  header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+  }
+  .brand h1 {
+    font-size: 24px;
+    font-weight: 800;
+    margin: 0;
+    letter-spacing: -0.5px;
+  }
+  .brand p {
+    margin: 4px 0 0;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .badges { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border: 1px solid var(--border-2);
+    background: var(--panel);
+  }
+  .pill.on { background: rgba(63, 185, 80, 0.14); color: var(--green); border-color: rgba(63, 185, 80, 0.35); }
+  .pill.off { background: rgba(248, 81, 73, 0.12); color: var(--red); border-color: rgba(248, 81, 73, 0.35); }
+  .pill.live { background: rgba(248, 81, 73, 0.14); color: var(--red); border-color: var(--red); }
+  .pill.accent { background: rgba(88, 166, 255, 0.12); color: var(--accent); border-color: rgba(88, 166, 255, 0.35); }
+
+  .warning {
+    display: none;
+    background: rgba(248, 81, 73, 0.10);
+    border: 1px solid rgba(248, 81, 73, 0.30);
+    color: #ff7b72;
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+  .warning.show { display: block; }
+
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    box-shadow: var(--shadow);
+  }
+  .toolbar .group { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toolbar .spacer { flex: 1; }
+  .toolbar .status {
+    font-size: 12px;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+  input {
+    background: var(--bg);
+    border: 1px solid var(--border-2);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    min-width: 220px;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    background: var(--panel-2);
+    color: var(--text);
+    border: 1px solid var(--border-2);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  button:hover { background: var(--border-2); }
+  button.primary { background: rgba(88, 166, 255, 0.12); border-color: rgba(88, 166, 255, 0.35); color: var(--accent); }
+  button.primary:hover { background: rgba(88, 166, 255, 0.18); }
+  button.danger { background: rgba(248, 81, 73, 0.12); border-color: rgba(248, 81, 73, 0.35); color: var(--red); }
+  button.danger:hover { background: rgba(248, 81, 73, 0.18); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .metric {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow);
+  }
+  .metric .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-2);
+    margin-bottom: 6px;
+  }
+  .metric .value {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+  }
+  .metric .suffix {
+    font-size: 13px;
+    color: var(--text-2);
+    font-family: var(--mono);
+    margin-left: 4px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 20px;
+    overflow: hidden;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-header h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-2);
+    margin: 0;
+  }
+  .scroll { max-height: 320px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th {
+    position: sticky;
+    top: 0;
+    background: var(--panel-2);
+    color: var(--text-2);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+  }
+  td { font-family: var(--mono); }
+  tbody tr:hover { background: rgba(255,255,255,0.03); }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { text-align: right; }
+  td.reason { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .tag.open { background: rgba(88, 166, 255, 0.12); color: var(--accent); }
+  .tag.closed { background: rgba(139, 148, 158, 0.12); color: var(--text-2); }
+  .tag.failed { background: rgba(248, 81, 73, 0.12); color: var(--red); }
+  .tag.rejected { background: rgba(210, 153, 34, 0.12); color: var(--orange); }
+  .tag.filled { background: rgba(63, 185, 80, 0.12); color: var(--green); }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3d4b5c; }
+
+  @media (max-width: 700px) {
+    body { padding: 12px; }
+    header { flex-direction: column; }
+    .grid { grid-template-columns: repeat(2, 1fr); }
+  }
 </style>
 </head>
 <body>
-<h1>Binance Signal Trader</h1>
-<div class="muted" id="endpoint">connecting…</div>
+<div class="container">
+  <header>
+    <div class="brand">
+      <h1>Binance Signal Trader</h1>
+      <p id="endpoint">connecting…</p>
+    </div>
+    <div class="badges">
+      <span id="mode" class="pill">env</span>
+      <span id="trading" class="pill">trading</span>
+    </div>
+  </header>
 
-<div class="bar">
-  <span id="mode" class="pill">env</span>
-  <span id="trading" class="pill">trading</span>
-  <input id="token" type="password" placeholder="admin token" size="24" />
-  <button id="btn-enable">Enable trading</button>
-  <button id="btn-disable">Disable</button>
-  <button id="btn-kill" class="danger">KILL SWITCH + close all</button>
-  <button id="btn-reconcile">Reconcile now</button>
-  <span class="muted" id="updated"></span>
+  <div id="exchange-error" class="warning"></div>
+
+  <div class="toolbar">
+    <div class="group">
+      <input id="token" type="password" placeholder="Admin token" />
+      <button id="btn-enable" class="primary">Enable trading</button>
+      <button id="btn-disable">Disable</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="group">
+      <button id="btn-reconcile">Reconcile now</button>
+      <button id="btn-kill" class="danger">Kill switch</button>
+    </div>
+  </div>
+
+  <div class="grid" id="cards"></div>
+
+  <div class="card">
+    <div class="card-header"><h2>Open positions</h2></div>
+    <div class="scroll"><table id="positions"><thead><tr>
+      <th>ID</th><th>Symbol</th><th class="num">Qty</th><th class="num">Entry</th><th class="num">Mark</th>
+      <th class="num">SL</th><th class="num">TP</th><th class="num">uPnL</th><th class="num">%</th><th>Opened</th><th></th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Trades</h2></div>
+    <div class="scroll"><table id="trades"><thead><tr>
+      <th>ID</th><th>Symbol</th><th>Status</th><th class="num">Qty</th><th class="num">Entry</th>
+      <th class="num">Exit</th><th class="num">PnL</th><th>Reason</th><th>Opened</th><th>Closed</th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Signals</h2></div>
+    <div class="scroll"><table id="signals"><thead><tr>
+      <th>ID</th><th>Source</th><th>Symbol</th><th>Side</th><th class="num">Conf</th>
+      <th>Status</th><th>Reason</th><th>Received</th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Audit log</h2></div>
+    <div class="scroll"><table id="audit"><thead><tr>
+      <th>Time</th><th>Event</th><th>Symbol</th><th>Decision</th><th>Reason</th>
+    </tr></thead><tbody></tbody></table></div>
+  </div>
+
+  <div class="toolbar" style="margin-top: 8px;">
+    <div class="status" id="updated"></div>
+    <div class="spacer"></div>
+    <div class="status">auto-refresh every 5s</div>
+  </div>
 </div>
-
-<div class="muted neg" id="exchange-error"></div>
-<div class="cards" id="cards"></div>
-
-<h2>Open positions</h2>
-<div class="scroll"><table id="positions"><thead><tr>
-  <th>#</th><th>Symbol</th><th>Qty</th><th>Entry</th><th>Mark</th><th>SL</th><th>TP</th><th>uPnL</th><th>%</th><th>Opened</th><th></th>
-</tr></thead><tbody></tbody></table></div>
-
-<h2>Trades</h2>
-<div class="scroll"><table id="trades"><thead><tr>
-  <th>#</th><th>Symbol</th><th>Status</th><th>Qty</th><th>Entry</th><th>Exit</th><th>PnL</th><th>Reason</th><th>Opened</th><th>Closed</th>
-</tr></thead><tbody></tbody></table></div>
-
-<h2>Signals</h2>
-<div class="scroll"><table id="signals"><thead><tr>
-  <th>#</th><th>Source</th><th>Symbol</th><th>Side</th><th>Conf</th><th>Status</th><th>Reason</th><th>Received</th>
-</tr></thead><tbody></tbody></table></div>
-
-<h2>Audit log</h2>
-<div class="scroll"><table id="audit"><thead><tr>
-  <th>Time</th><th>Event</th><th>Symbol</th><th>Decision</th><th>Reason</th>
-</tr></thead><tbody></tbody></table></div>
 
 <script>
 const $ = (s) => document.querySelector(s);
 const fmt = (v, d = 2) => v === null || v === undefined ? "—" : Number(v).toLocaleString("en-US", {minimumFractionDigits: d, maximumFractionDigits: 8});
 const time = (t) => t ? new Date(t).toLocaleString() : "—";
 const cls = (v) => Number(v) > 0 ? "pos" : Number(v) < 0 ? "neg" : "";
+const tagClass = (status) => {
+  const s = (status || "").toLowerCase();
+  if (["open", "new", "pending"].includes(s)) return "open";
+  if (["closed", "filled"].includes(s)) return "filled";
+  if (["failed", "error"].includes(s)) return "failed";
+  if (["rejected"].includes(s)) return "rejected";
+  return "";
+};
 
 function token() {
   const t = $("#token").value.trim();
@@ -101,20 +345,44 @@ function rows(table, data, render) {
 async function refreshStatus() {
   const s = await api("/api/status");
   $("#endpoint").textContent = `${s.base_url} · quote ${s.quote_asset} · symbols ${s.allowed_symbols.join(", ")} · clock offset ${s.server_time_offset_ms ?? "—"} ms`;
-  $("#mode").textContent = s.environment.toUpperCase();
-  $("#mode").className = "pill " + (s.environment === "live" ? "live" : "on");
-  $("#trading").textContent = s.trading_enabled ? "TRADING ON" : "TRADING OFF" + (s.kill_switch_reason ? ` · ${s.kill_switch_reason}` : "");
-  $("#trading").className = "pill " + (s.trading_enabled ? "on" : "off");
-  $("#exchange-error").textContent = s.exchange_error ? `Binance unreachable: ${s.exchange_error}` : "";
+  const mode = $("#mode");
+  mode.textContent = s.environment.toUpperCase();
+  mode.className = "pill " + (s.environment === "live" ? "live" : "accent");
+  const trading = $("#trading");
+  trading.textContent = s.trading_enabled ? "TRADING ON" : ("TRADING OFF" + (s.kill_switch_reason ? ` · ${s.kill_switch_reason}` : ""));
+  trading.className = "pill " + (s.trading_enabled ? "on" : "off");
+
+  const err = $("#exchange-error");
+  if (s.exchange_error) {
+    err.textContent = "Binance API unavailable: " + s.exchange_error;
+    err.classList.add("show");
+  } else {
+    err.classList.remove("show");
+    err.textContent = "";
+  }
+
   $("#cards").innerHTML = [
-    ["Equity", `${fmt(s.account_equity_quote)} ${s.quote_asset}`, ""],
-    ["Free balance", `${fmt(s.free_quote_balance)} ${s.quote_asset}`, ""],
-    ["Realized PnL today", fmt(s.realized_pnl_today), cls(s.realized_pnl_today)],
-    ["Unrealized PnL", fmt(s.unrealized_pnl), cls(s.unrealized_pnl)],
+    ["Equity", s.account_equity_quote, s.quote_asset],
+    ["Free balance", s.free_quote_balance, s.quote_asset],
+    ["Realized PnL today", s.realized_pnl_today, ""],
+    ["Unrealized PnL", s.unrealized_pnl, ""],
     ["Open positions", `${s.open_positions} / ${s.max_open_positions}`, ""],
     ["Trades today", `${s.trades_today} / ${s.max_trades_per_day}`, ""],
-    ["Daily loss limit", `${fmt(s.daily_loss_limit)} ${s.quote_asset}`, ""],
-  ].map(([label, value, c]) => `<div class="card"><div class="label">${label}</div><div class="value ${c}">${value}</div></div>`).join("");
+    ["Daily loss limit", s.daily_loss_limit, s.quote_asset],
+  ].map(([label, value, suffix]) => {
+    const c = cls(value);
+    let display = "—";
+    if (value === null || value === undefined) {
+      display = "—";
+    } else if (typeof value === "string" && value.includes("/")) {
+      display = value;
+    } else if (suffix) {
+      display = `${fmt(value)} <span class="suffix">${suffix}</span>`;
+    } else {
+      display = fmt(value);
+    }
+    return `<div class="metric"><div class="label">${label}</div><div class="value ${c}">${display}</div></div>`;
+  }).join("");
 }
 
 async function refresh() {
@@ -122,29 +390,35 @@ async function refresh() {
     refreshStatus(),
 
     api("/api/positions").then((data) => rows("#positions", data, (p) => `<tr>
-      <td>${p.trade_id}</td><td>${p.symbol}</td><td>${fmt(p.qty, 6)}</td><td>${fmt(p.entry_price)}</td>
-      <td>${fmt(p.mark_price)}</td><td>${fmt(p.stop_price)}</td><td>${fmt(p.take_profit_price)}</td>
-      <td class="${cls(p.unrealized_pnl_quote)}">${fmt(p.unrealized_pnl_quote)}</td>
-      <td class="${cls(p.unrealized_pnl_pct)}">${fmt(p.unrealized_pnl_pct)}%</td>
+      <td>${p.trade_id}</td><td>${p.symbol}</td><td class="num">${fmt(p.qty, 6)}</td>
+      <td class="num">${fmt(p.entry_price)}</td><td class="num">${fmt(p.mark_price)}</td>
+      <td class="num">${fmt(p.stop_price)}</td><td class="num">${fmt(p.take_profit_price)}</td>
+      <td class="num ${cls(p.unrealized_pnl_quote)}">${fmt(p.unrealized_pnl_quote)}</td>
+      <td class="num ${cls(p.unrealized_pnl_pct)}">${fmt(p.unrealized_pnl_pct)}%</td>
       <td>${time(p.opened_at)}</td>
       <td><button onclick="closeTrade(${p.trade_id})">Close</button></td></tr>`)),
 
     api("/api/trades?limit=50").then((data) => rows("#trades", data, (t) => `<tr>
-      <td>${t.id}</td><td>${t.symbol}</td><td>${t.status}</td><td>${fmt(t.qty, 6)}</td>
-      <td>${fmt(t.entry_price)}</td><td>${fmt(t.exit_price)}</td>
-      <td class="${cls(t.realized_pnl_quote)}">${fmt(t.realized_pnl_quote)}</td>
-      <td>${t.exit_reason || "—"}</td><td>${time(t.opened_at)}</td><td>${time(t.closed_at)}</td></tr>`)),
+      <td>${t.id}</td><td>${t.symbol}</td><td><span class="tag ${tagClass(t.status)}">${t.status}</span></td>
+      <td class="num">${fmt(t.qty, 6)}</td><td class="num">${fmt(t.entry_price)}</td>
+      <td class="num">${fmt(t.exit_price)}</td>
+      <td class="num ${cls(t.realized_pnl_quote)}">${fmt(t.realized_pnl_quote)}</td>
+      <td class="reason" title="${t.exit_reason || ""}">${t.exit_reason || "—"}</td>
+      <td>${time(t.opened_at)}</td><td>${time(t.closed_at)}</td></tr>`)),
 
     api("/api/signals?limit=50").then((data) => rows("#signals", data, (x) => `<tr>
-      <td>${x.id}</td><td>${x.source}</td><td>${x.symbol}</td><td>${x.side}</td><td>${x.confidence}</td>
-      <td>${x.status}</td><td>${x.reject_reason || "—"}</td><td>${time(x.received_at)}</td></tr>`)),
+      <td>${x.id}</td><td>${x.source}</td><td>${x.symbol}</td><td>${x.side}</td>
+      <td class="num">${x.confidence}</td>
+      <td><span class="tag ${tagClass(x.status)}">${x.status}</span></td>
+      <td class="reason" title="${x.reject_reason || ""}">${x.reject_reason || "—"}</td>
+      <td>${time(x.received_at)}</td></tr>`)),
 
     api("/api/audit?limit=100").then((data) => rows("#audit", data, (a) => `<tr>
       <td>${time(a.created_at)}</td><td>${a.event}</td><td>${a.symbol || "—"}</td>
-      <td>${a.decision || "—"}</td><td>${a.reason || "—"}</td></tr>`)),
+      <td>${a.decision || "—"}</td>
+      <td class="reason" title="${a.reason || ""}">${a.reason || "—"}</td></tr>`)),
   ];
 
-  // One failing section must never blank the rest of the dashboard.
   const failures = (await Promise.allSettled(sections)).filter((r) => r.status === "rejected");
   $("#updated").textContent = failures.length
     ? failures.map((f) => String(f.reason)).join(" | ")
