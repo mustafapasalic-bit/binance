@@ -87,3 +87,45 @@ class StatusOut(BaseModel):
     daily_loss_limit: Decimal
     allowed_symbols: list[str]
     exchange_error: str | None = None
+
+
+class MarketTickerOut(BaseModel):
+    symbol: str
+    last_price: Decimal
+    change_pct: Decimal
+    high: Decimal
+    low: Decimal
+    quote_volume: Decimal
+    bid: Decimal
+    ask: Decimal
+    spread_pct: Decimal | None = None
+
+
+class MarketOut(BaseModel):
+    source: str
+    tickers: list[MarketTickerOut]
+    error: str | None = None
+
+
+class EquityPoint(BaseModel):
+    trade_id: int
+    closed_at: datetime
+    cumulative_pnl: Decimal
+
+
+class PerformanceOut(BaseModel):
+    closed_trades: int
+    wins: int
+    losses: int
+    win_rate_pct: Decimal | None
+    total_realized_pnl: Decimal
+    gross_profit: Decimal
+    gross_loss: Decimal
+    profit_factor: Decimal | None
+    avg_win: Decimal | None
+    avg_loss: Decimal | None
+    expectancy: Decimal | None
+    best_trade: Decimal | None
+    worst_trade: Decimal | None
+    max_drawdown: Decimal
+    equity_curve: list[EquityPoint]

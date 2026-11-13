@@ -131,12 +131,10 @@ class BinanceClient:
         self.base_url = base_url.rstrip("/")
         self._recv_window = recv_window
         self._max_retries = max_retries
-        self._client = httpx.Client(
-            base_url=self.base_url,
-            timeout=timeout,
-            proxy=proxy_url or None,
-            headers={"X-MBX-APIKEY": api_key, "User-Agent": "binance-signal-trader/1.0"},
-        )
+        headers = {"User-Agent": "binance-signal-trader/1.0"}
+        if api_key:
+            headers["X-MBX-APIKEY"] = api_key
+        self._client = httpx.Client(base_url=self.base_url, timeout=timeout, proxy=proxy_url or None, headers=headers)
         self._limiter = RateLimiter()
         self._time_offset_ms = 0
         self._filters: dict[str, SymbolFilters] = {}
@@ -257,6 +255,10 @@ class BinanceClient:
 
     def book_ticker(self, symbol: str) -> dict:
         return self._request("GET", "/api/v3/ticker/bookTicker", {"symbol": symbol})
+
+    def ticker_24h(self, symbols: list[str]) -> list[dict]:
+        params = {"symbols": "[" + ",".join(f'"{s}"' for s in symbols) + "]"}
+        return self._request("GET", "/api/v3/ticker/24hr", params, weight=max(2, min(40, 2 * len(symbols))))
 
     def klines(self, symbol: str, interval: str, limit: int = 100) -> list:
         return self._request("GET", "/api/v3/klines", {"symbol": symbol, "interval": interval, "limit": limit})

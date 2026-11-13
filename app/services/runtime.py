@@ -6,6 +6,7 @@ from app.exchange.binance_client import BinanceClient
 logger = logging.getLogger(__name__)
 
 _client: BinanceClient | None = None
+_market_client: BinanceClient | None = None
 
 
 def get_client(settings: Settings | None = None) -> BinanceClient:
@@ -31,8 +32,23 @@ def get_client(settings: Settings | None = None) -> BinanceClient:
     return _client
 
 
+def get_market_client(settings: Settings | None = None) -> BinanceClient:
+    """Keyless client for public market data; works without credentials."""
+    global _market_client
+    if _market_client is None:
+        settings = settings or get_settings()
+        _market_client = BinanceClient(
+            api_key="",
+            api_secret="",
+            base_url=settings.market_data_url,
+            proxy_url=settings.binance_proxy_url or None,
+        )
+    return _market_client
+
+
 def reset_client() -> None:
-    global _client
-    if _client is not None:
-        _client.close()
-    _client = None
+    global _client, _market_client
+    for client in (_client, _market_client):
+        if client is not None:
+            client.close()
+    _client = _market_client = None

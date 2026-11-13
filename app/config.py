@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     # Binance answers HTTP 451 from restricted regions (e.g. US-hosted servers).
     # Route through an outbound proxy located where the account is allowed to trade.
     binance_proxy_url: str = ""
+    # Public, keyless market data for the dashboard ticker. Empty = Binance's public data mirror.
+    binance_market_data_url: str = ""
 
     # --- Persistence ------------------------------------------------------
     database_url: str = "sqlite:///./trader.db"
@@ -58,6 +60,10 @@ class Settings(BaseSettings):
         if self.binance_base_url:
             return self.binance_base_url.rstrip("/")
         return "https://testnet.binance.vision" if self.binance_env == "testnet" else "https://api.binance.com"
+
+    @property
+    def market_data_url(self) -> str:
+        return (self.binance_market_data_url or "https://data-api.binance.vision").rstrip("/")
 
     @property
     def symbol_whitelist(self) -> list[str]:

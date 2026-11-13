@@ -222,6 +222,34 @@
   .tag.rejected { background: rgba(210, 153, 34, 0.12); color: var(--orange); }
   .tag.filled { background: rgba(63, 185, 80, 0.12); color: var(--green); }
 
+  .card-header .meta { font-size: 11px; color: var(--text-2); font-family: var(--mono); }
+  .market {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 14px;
+    padding: 16px;
+  }
+  .ticker { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .ticker .head { display: flex; justify-content: space-between; align-items: baseline; }
+  .ticker .sym { font-weight: 700; font-size: 14px; }
+  .ticker .chg { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+  .ticker .price { font-family: var(--mono); font-size: 22px; font-weight: 600; margin: 6px 0 10px; }
+  .ticker dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0; font-size: 12px; }
+  .ticker dt { color: var(--text-2); }
+  .ticker dd { margin: 0; text-align: right; font-family: var(--mono); white-space: nowrap; }
+  .range { height: 4px; background: var(--border-2); border-radius: 2px; position: relative; margin: 0 0 10px; }
+  .range span { position: absolute; top: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); transform: translateX(-50%); }
+  .empty { padding: 16px; color: var(--text-2); font-size: 13px; }
+  .perf { display: grid; grid-template-columns: minmax(260px, 1fr) 2fr; gap: 0; }
+  .perf .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; padding: 16px; font-size: 13px; border-right: 1px solid var(--border); align-content: start; }
+  .perf .kv dt { color: var(--text-2); }
+  .perf .kv dd { margin: 0; text-align: right; font-family: var(--mono); }
+  .chart { padding: 16px; min-height: 220px; }
+  .chart svg { width: 100%; height: 200px; display: block; }
+  .chart .axis { stroke: var(--border-2); stroke-width: 1; }
+  .chart .zero { stroke: var(--text-2); stroke-dasharray: 4 4; stroke-width: 1; opacity: 0.5; }
+  .chart text { fill: var(--text-2); font-size: 11px; font-family: var(--mono); }
+
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
@@ -231,6 +259,8 @@
     body { padding: 12px; }
     header { flex-direction: column; }
     .grid { grid-template-columns: repeat(2, 1fr); }
+    .perf { grid-template-columns: 1fr; }
+    .perf .kv { border-right: none; border-bottom: 1px solid var(--border); }
   }
 </style>
 </head>
@@ -263,6 +293,19 @@
   </div>
 
   <div class="grid" id="cards"></div>
+
+  <div class="card">
+    <div class="card-header"><h2>Market · 24h</h2><span class="meta" id="market-source"></span></div>
+    <div class="market" id="market"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h2>Performance</h2><span class="meta">closed trades, realized PnL after fees</span></div>
+    <div class="perf">
+      <dl class="kv" id="perf"></dl>
+      <div class="chart" id="equity"></div>
+    </div>
+  </div>
 
   <div class="card">
     <div class="card-header"><h2>Open positions</h2></div>
@@ -304,6 +347,7 @@
 
 <script>
 const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 const fmt = (v, d = 2) => v === null || v === undefined ? "—" : Number(v).toLocaleString("en-US", {minimumFractionDigits: d, maximumFractionDigits: 8});
 const time = (t) => t ? new Date(t).toLocaleString() : "—";
 const cls = (v) => Number(v) > 0 ? "pos" : Number(v) < 0 ? "neg" : "";
@@ -385,12 +429,80 @@ async function refreshStatus() {
   }).join("");
 }
 
+const compact = (v) => Number(v).toLocaleString("en-US", {notation: "compact", maximumFractionDigits: 2});
+const money = (v) => Number(v).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const signed = (v) => v === null || v === undefined ? "—" : (Number(v) > 0 ? "+" : "") + money(v);
+
+async function refreshMarket() {
+  const m = await api("/api/market");
+  $("#market-source").textContent = `public data · ${m.source}`;
+  if (m.error || !m.tickers.length) {
+    $("#market").innerHTML = `<div class="empty">${esc(m.error ? "Market data unavailable: " + m.error : "No symbols configured")}</div>`;
+    return;
+  }
+  $("#market").innerHTML = m.tickers.map((t) => {
+    const lo = Number(t.low), hi = Number(t.high), last = Number(t.last_price);
+    const pos = hi > lo ? Math.min(100, Math.max(0, (last - lo) / (hi - lo) * 100)) : 50;
+    return `<div class="ticker">
+      <div class="head"><span class="sym">${esc(t.symbol)}</span><span class="chg ${cls(t.change_pct)}">${signed(t.change_pct)}%</span></div>
+      <div class="price">${fmt(t.last_price)}</div>
+      <div class="range" title="24h range"><span style="left:${pos}%"></span></div>
+      <dl>
+        <dt>24h low / high</dt><dd>${fmt(t.low)} / ${fmt(t.high)}</dd>
+        <dt>Bid / ask</dt><dd>${fmt(t.bid)} / ${fmt(t.ask)}</dd>
+        <dt>Spread</dt><dd>${t.spread_pct === null ? "—" : Number(t.spread_pct).toFixed(4) + "%"}</dd>
+        <dt>Volume (quote)</dt><dd>${compact(t.quote_volume)}</dd>
+      </dl></div>`;
+  }).join("");
+}
+
+function equityChart(points, width) {
+  if (points.length < 1) return `<div class="empty">No closed trades yet — the cumulative PnL curve appears after the first exit.</div>`;
+  const W = Math.max(280, width || 600), H = 200, P = 44;
+  const ys = [0, ...points.map((p) => Number(p.cumulative_pnl))];
+  const min = Math.min(...ys), max = Math.max(...ys), span = max - min || 1;
+  const x = (i) => P + (i / Math.max(1, ys.length - 1)) * (W - P - 8);
+  const y = (v) => 8 + (1 - (v - min) / span) * (H - 24);
+  const path = ys.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+  const last = ys[ys.length - 1];
+  const color = last >= 0 ? "var(--green)" : "var(--red)";
+  return `<svg viewBox="0 0 ${W} ${H}">
+    <line class="axis" x1="${P}" y1="8" x2="${P}" y2="${H - 16}" />
+    <line class="zero" x1="${P}" y1="${y(0)}" x2="${W - 8}" y2="${y(0)}" />
+    <path d="${path} L${x(ys.length - 1)},${y(0)} L${x(0)},${y(0)} Z" fill="${color}" opacity="0.10" />
+    <path d="${path}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke" />
+    <text x="${P - 4}" y="14" text-anchor="end">${compact(max)}</text>
+    <text x="${P - 4}" y="${H - 16}" text-anchor="end">${compact(min)}</text>
+    <text x="${W - 8}" y="${H - 2}" text-anchor="end">${points.length} trades</text>
+  </svg>`;
+}
+
+async function refreshStats() {
+  const s = await api("/api/stats");
+  const pct = (v) => v === null || v === undefined ? "—" : `${fmt(v, 1)}%`;
+  $("#perf").innerHTML = [
+    ["Closed trades", `${s.closed_trades} (${s.wins}W / ${s.losses}L)`, ""],
+    ["Win rate", pct(s.win_rate_pct), ""],
+    ["Total realized PnL", signed(s.total_realized_pnl), cls(s.total_realized_pnl)],
+    ["Profit factor", s.profit_factor === null ? "—" : money(s.profit_factor), ""],
+    ["Expectancy / trade", signed(s.expectancy), cls(s.expectancy)],
+    ["Avg win", signed(s.avg_win), "pos"],
+    ["Avg loss", signed(s.avg_loss), "neg"],
+    ["Best / worst", `${signed(s.best_trade)} / ${signed(s.worst_trade)}`, ""],
+    ["Max drawdown", money(s.max_drawdown), Number(s.max_drawdown) > 0 ? "neg" : ""],
+  ].map(([k, v, c]) => `<dt>${k}</dt><dd class="${c}">${v}</dd>`).join("");
+  const chart = $("#equity");
+  chart.innerHTML = equityChart(s.equity_curve, chart.clientWidth - 32);
+}
+
 async function refresh() {
   const sections = [
     refreshStatus(),
+    refreshMarket(),
+    refreshStats(),
 
     api("/api/positions").then((data) => rows("#positions", data, (p) => `<tr>
-      <td>${p.trade_id}</td><td>${p.symbol}</td><td class="num">${fmt(p.qty, 6)}</td>
+      <td>${p.trade_id}</td><td>${esc(p.symbol)}</td><td class="num">${fmt(p.qty, 6)}</td>
       <td class="num">${fmt(p.entry_price)}</td><td class="num">${fmt(p.mark_price)}</td>
       <td class="num">${fmt(p.stop_price)}</td><td class="num">${fmt(p.take_profit_price)}</td>
       <td class="num ${cls(p.unrealized_pnl_quote)}">${fmt(p.unrealized_pnl_quote)}</td>
@@ -399,24 +511,24 @@ async function refresh() {
       <td><button onclick="closeTrade(${p.trade_id})">Close</button></td></tr>`)),
 
     api("/api/trades?limit=50").then((data) => rows("#trades", data, (t) => `<tr>
-      <td>${t.id}</td><td>${t.symbol}</td><td><span class="tag ${tagClass(t.status)}">${t.status}</span></td>
+      <td>${t.id}</td><td>${esc(t.symbol)}</td><td><span class="tag ${tagClass(t.status)}">${esc(t.status)}</span></td>
       <td class="num">${fmt(t.qty, 6)}</td><td class="num">${fmt(t.entry_price)}</td>
       <td class="num">${fmt(t.exit_price)}</td>
       <td class="num ${cls(t.realized_pnl_quote)}">${fmt(t.realized_pnl_quote)}</td>
-      <td class="reason" title="${t.exit_reason || ""}">${t.exit_reason || "—"}</td>
+      <td class="reason" title="${esc(t.exit_reason)}">${esc(t.exit_reason || "—")}</td>
       <td>${time(t.opened_at)}</td><td>${time(t.closed_at)}</td></tr>`)),
 
     api("/api/signals?limit=50").then((data) => rows("#signals", data, (x) => `<tr>
-      <td>${x.id}</td><td>${x.source}</td><td>${x.symbol}</td><td>${x.side}</td>
-      <td class="num">${x.confidence}</td>
-      <td><span class="tag ${tagClass(x.status)}">${x.status}</span></td>
-      <td class="reason" title="${x.reject_reason || ""}">${x.reject_reason || "—"}</td>
+      <td>${x.id}</td><td>${esc(x.source)}</td><td>${esc(x.symbol)}</td><td>${esc(x.side)}</td>
+      <td class="num">${esc(x.confidence)}</td>
+      <td><span class="tag ${tagClass(x.status)}">${esc(x.status)}</span></td>
+      <td class="reason" title="${esc(x.reject_reason)}">${esc(x.reject_reason || "—")}</td>
       <td>${time(x.received_at)}</td></tr>`)),
 
     api("/api/audit?limit=100").then((data) => rows("#audit", data, (a) => `<tr>
-      <td>${time(a.created_at)}</td><td>${a.event}</td><td>${a.symbol || "—"}</td>
-      <td>${a.decision || "—"}</td>
-      <td class="reason" title="${a.reason || ""}">${a.reason || "—"}</td></tr>`)),
+      <td>${time(a.created_at)}</td><td>${esc(a.event)}</td><td>${esc(a.symbol || "—")}</td>
+      <td>${esc(a.decision || "—")}</td>
+      <td class="reason" title="${esc(a.reason)}">${esc(a.reason || "—")}</td></tr>`)),
   ];
 
   const failures = (await Promise.allSettled(sections)).filter((r) => r.status === "rejected");

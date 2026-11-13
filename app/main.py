@@ -3,6 +3,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import router
 from app.config import get_settings
 from app.db import init_db, session_scope
+from app.exchange.binance_client import BinanceError
 from app.services import pipeline, portfolio
 from app.services.runtime import get_client
 
@@ -22,6 +24,7 @@ RECONCILE_INTERVAL_SEC = 15
 
 async def reconcile_loop() -> None:
     settings = get_settings()
+    last_unavailable: str | None = None
     while True:
         try:
             await asyncio.sleep(RECONCILE_INTERVAL_SEC)
@@ -29,8 +32,16 @@ async def reconcile_loop() -> None:
             with session_scope() as session:
                 portfolio.reconcile_all(session, client, settings)
                 pipeline.enforce_daily_loss_limit(session, settings)
+            if last_unavailable:
+                logger.info("Binance reachable again, reconciliation resumed")
+            last_unavailable = None
         except asyncio.CancelledError:
             raise
+        except (RuntimeError, BinanceError, httpx.HTTPError) as exc:
+            # Missing credentials or a blocked region: report once per distinct cause, not every 15s.
+            if str(exc) != last_unavailable:
+                logger.warning("reconciliation paused: %s", exc)
+            last_unavailable = str(exc)
         except Exception:  # noqa: BLE001 - the loop must survive transient API errors
             logger.exception("reconcile loop iteration failed")
 

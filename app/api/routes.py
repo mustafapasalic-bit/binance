@@ -12,9 +12,9 @@ from app.config import Settings
 from app.db import get_session
 from app.exchange.binance_client import BinanceClient, BinanceError
 from app.models import AuditLog, Signal, Trade
-from app.schemas import PositionOut, SignalIn, SignalResult, StatusOut, TradeOut
-from app.services import execution, pipeline, portfolio, risk
-from app.services.runtime import get_client
+from app.schemas import MarketOut, PerformanceOut, PositionOut, SignalIn, SignalResult, StatusOut, TradeOut
+from app.services import execution, market, pipeline, portfolio, risk, stats
+from app.services.runtime import get_client, get_market_client
 from app.services.state import get_state, set_trading_enabled
 
 router = APIRouter()
@@ -65,6 +65,21 @@ def status(session: Session = Depends(get_session), settings: Settings = Depends
     except (BinanceError, httpx.HTTPError) as exc:
         out.exchange_error = str(exc)
     return out
+
+
+@router.get("/market", response_model=MarketOut)
+def market_snapshot(settings: Settings = Depends(settings_dep)) -> MarketOut:
+    out = MarketOut(source=settings.market_data_url, tickers=[])
+    try:
+        out.tickers = market.snapshot(get_market_client(settings), settings.symbol_whitelist)
+    except (BinanceError, httpx.HTTPError, KeyError, ValueError) as exc:
+        out.error = str(exc)
+    return out
+
+
+@router.get("/stats", response_model=PerformanceOut)
+def performance(session: Session = Depends(get_session)) -> PerformanceOut:
+    return stats.performance(session)
 
 
 @router.post("/signals/webhook", response_model=SignalResult)

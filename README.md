@@ -78,6 +78,8 @@ python -m scripts.send_signal BTCUSDT BUY --confidence 0.9
 | GET | `/api/status` | live equity, balances, PnL, limits, kill-switch state |
 | GET | `/api/positions` | open positions with mark price and unrealized PnL |
 | GET | `/api/trades` | trade history with realized PnL |
+| GET | `/api/stats` | win rate, profit factor, expectancy, max drawdown, cumulative PnL curve (closed trades only) |
+| GET | `/api/market` | 24h ticker for the whitelist from Binance public data (keyless, display only) |
 | GET | `/api/signals` | every signal, including rejected ones and the reason |
 | GET | `/api/audit` | full audit trail |
 | POST | `/api/signals/webhook` | ingest a signal |
